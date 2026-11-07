@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diaspora Honey — hive monitor</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+  :root {
+    --bg: #fbfaf6;
+    --card: #ffffff;
+    --ink: #1f2420;
+    --quiet: #5f6b63;
+    --line: #e2e5df;
+    --accent: #b8860b;
+    --good: #2f7a4d;
+    --warn: #b5541a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    font-size: 17px;
+    line-height: 1.5;
+  }
+  header {
+    background: var(--card);
+    border-bottom: 1px solid var(--line);
+    padding: 16px 20px;
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  h1 { font-size: 20px; margin: 0; font-weight: 650; }
+  .sub { color: var(--quiet); font-size: 15px; }
+  main { max-width: 1000px; margin: 0 auto; padding: 20px; }
+
+  .sites { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+  .chip {
+    padding: 10px 16px;
+    border: 1px solid var(--line);
+    background: var(--card);
+    border-radius: 999px;
+    cursor: pointer;
+    font-size: 16px;
+    color: var(--ink);
+  }
+  .chip[aria-pressed="true"] {
+    background: var(--ink); color: var(--bg); border-color: var(--ink);
+  }
+
+  .hives { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); margin-bottom: 24px; }
+  .hive {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px;
+    cursor: pointer;
+    text-align: left;
+    font: inherit;
+    color: inherit;
+  }
+  .hive[aria-pressed="true"] { border-color: var(--accent); border-width: 2px; padding: 15px; }
+  .hive h2 { font-size: 17px; margin: 0 0 4px; }
+  .hive .seen { font-size: 14px; color: var(--quiet); }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; }
+  .dot.ok { background: var(--good); }
+  .dot.stale { background: var(--warn); }
+  .vals { margin-top: 10px; font-size: 15px; color: var(--quiet); }
+
+  .panel {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+  .panel h2 { font-size: 17px; margin: 0 0 12px; }
+  label { display: block; font-size: 15px; color: var(--quiet); margin-bottom: 6px; }
+  select, button {
+    font: inherit;
+    padding: 11px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--card);
+    color: var(--ink);
+    min-height: 44px;
+  }
+  button.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); cursor: pointer; }
+  .row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+  .state { font-size: 15px; margin-top: 10px; }
+  .state.pending { color: var(--warn); }
+  .state.ok { color: var(--good); }
+
+  .ranges { display: flex; gap: 6px; margin-bottom: 12px; }
+  .ranges .chip { padding: 7px 14px; font-size: 15px; }
+
+  .chart { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 12px; }
+  .chart h3 { font-size: 15px; margin: 0 0 8px; color: var(--quiet); font-weight: 600; }
+  canvas { max-height: 220px; }
+  footer { padding: 20px; text-align: center; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Diaspora Honey</h1>
+  <span class="sub">hive monitor</span>
+  <span style="flex:1"></span>
+  <form method="post" action="/logout"><button>Log out</button></form>
+</header>
+
+<main>
+  <div class="sites" id="sites"></div>
+  <div class="hives" id="hives"></div>
+
+  <div class="panel" id="settings" hidden>
+    <h2>Reading frequency — <span id="settingsFor"></span></h2>
+    <div class="row">
+      <div>
+        <label for="interval">How often the hive measures and reports</label>
+        <select id="interval">
+          <option value="15">Swarm season — every 15 minutes</option>
+          <option value="30">Normal — every 30 minutes</option>
+          <option value="60">Light — every hour</option>
+          <option value="360">Winter — every 6 hours</option>
+        </select>
+      </div>
+      <button class="primary" id="save">Save</button>
+    </div>
+    <div class="state" id="state"></div>
+  </div>
+
+  <div class="ranges" id="ranges">
+    <button class="chip" data-hours="24">24 h</button>
+    <button class="chip" data-hours="168" aria-pressed="true">7 days</button>
+    <button class="chip" data-hours="720">30 days</button>
+  </div>
+
+  <div id="charts"></div>
+</main>
+
+<footer class="sub">Times shown in your local time zone. The server stores UTC.</footer>
+
+<script>
+const LABELS = {
+  temp_c:            "Brood nest temperature (°C)",
+  humidity_pct:      "Brood nest humidity (%)",
+  weight_kg:         "Hive weight (kg)",
+  amb_temp_c:        "Outside temperature (°C)",
+  amb_humidity_pct:  "Outside humidity (%)",
+  frame1_c:          "Frame 2–3 temperature (°C)",
+  frame2_c:          "Frame 7–8 temperature (°C)",
+  battery_v:         "Battery (V)",
+};
+const ORDER = ["weight_kg","temp_c","humidity_pct","amb_temp_c",
+               "frame1_c","frame2_c","amb_humidity_pct","battery_v"];
+
+let hives = [], site = null, hive = null, hours = 168;
+const charts = {};
+
+async function getJSON(url) {
+  const r = await fetch(url);
+  if (r.status === 401) { location.href = "/login"; return null; }
+  if (!r.ok) return null;
+  return r.json();
+}
+
+function fmtSeen(ts) {
+  if (!ts) return "never";
+  const mins = Math.round((Date.now() / 1000 - ts) / 60);
+  if (mins < 1) return "just now";
+  if (mins < 60) return mins + " min ago";
+  const h = Math.round(mins / 60);
+  if (h < 48) return h + " h ago";
+  return Math.round(h / 24) + " days ago";
+}
+
+async function loadHives() {
+  hives = (await getJSON("/api/hives")) || [];
+  const sites = [...new Set(hives.map(h => h.site))];
+  if (!site || !sites.includes(site)) site = sites[0];
+
+  document.getElementById("sites").innerHTML = sites.map(s =>
+    `<button class="chip" data-site="${s}" aria-pressed="${s === site}">${s}</button>`
+  ).join("");
+
+  const here = hives.filter(h => h.site === site);
+  if (!hive || !here.some(h => h.id === hive)) hive = here.length ? here[0].id : null;
+
+  const cards = await Promise.all(here.map(async h => {
+    const latest = (await getJSON(`/api/hives/${h.id}/latest`)) || {};
+    const stale = !h.last_seen || (Date.now() / 1000 - h.last_seen) > h.interval_min * 60 * 2.5;
+    const bits = ["weight_kg", "temp_c", "humidity_pct"]
+      .filter(m => latest[m])
+      .map(m => `${latest[m].value.toFixed(1)}${m === "weight_kg" ? " kg" : m === "temp_c" ? " °C" : " %"}`)
+      .join(" · ");
+    return `<button class="hive" data-hive="${h.id}" aria-pressed="${h.id === hive}">
+      <h2>${h.name || h.id}</h2>
+      <div class="seen"><span class="dot ${stale ? "stale" : "ok"}"></span>${fmtSeen(h.last_seen)}</div>
+      <div class="vals">${bits || "no readings yet"}</div>
+    </button>`;
+  }));
+  document.getElementById("hives").innerHTML = cards.join("");
+}
+
+async function loadStatus() {
+  if (!hive) return;
+  const s = await getJSON(`/api/hives/${hive}/status`);
+  if (!s) return;
+  document.getElementById("settings").hidden = false;
+  document.getElementById("settingsFor").textContent = s.name || s.id;
+
+  const sel = document.getElementById("interval");
+  if (document.activeElement !== sel) {
+    if (![...sel.options].some(o => Number(o.value) === s.interval_min)) {
+      const o = document.createElement("option");
+      o.value = s.interval_min;
+      o.textContent = `Custom — every ${s.interval_min} minutes`;
+      sel.appendChild(o);
+    }
+    sel.value = String(s.interval_min);
+  }
+
+  const el = document.getElementById("state");
+  if (s.reported_interval === null) {
+    el.className = "state"; el.textContent = "Waiting for the hive's first check-in.";
+  } else if (s.reported_interval !== s.interval_min) {
+    const due = Math.max(0, Math.round((s.last_seen + s.reported_interval * 60 - Date.now() / 1000) / 60));
+    el.className = "state pending";
+    el.textContent = `⏳ Pending — the hive is still on ${s.reported_interval} min. Applies at its next check-in (~${due} min).`;
+  } else {
+    el.className = "state ok";
+    el.textContent = `✓ Confirmed — the hive is using ${s.reported_interval} minutes.`;
+  }
+  return s;
+}
+
+async function loadCharts(metrics) {
+  const wrap = document.getElementById("charts");
+  const want = ORDER.filter(m => metrics.includes(m))
+                    .concat(metrics.filter(m => !ORDER.includes(m)));
+  for (const id of Object.keys(charts)) {
+    if (!want.includes(id)) { charts[id].destroy(); delete charts[id]; }
+  }
+  for (const metric of want) {
+    const rows = await getJSON(`/api/hives/${hive}/readings?metric=${metric}&hours=${hours}`);
+    if (!rows) return;
+    const points = rows.map(r => ({ x: r.ts * 1000, y: r.value }));
+    if (!charts[metric]) {
+      const card = document.createElement("div");
+      card.className = "chart";
+      card.innerHTML = `<h3>${LABELS[metric] || metric}</h3><canvas></canvas>`;
+      wrap.appendChild(card);
+      charts[metric] = new Chart(card.querySelector("canvas"), {
+        type: "line",
+        data: { datasets: [{ data: points, borderColor: "#b8860b", borderWidth: 1.5,
+                             pointRadius: 0, tension: 0.15, fill: false }] },
+        options: {
+          animation: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { type: "time", time: { tooltipFormat: "MMM d, HH:mm" },
+                 ticks: { maxTicksLimit: 7, maxRotation: 0 } },
+            y: { beginAtZero: false },
+          },
+        },
+      });
+    } else {
+      charts[metric].data.datasets[0].data = points;
+      charts[metric].update();
+    }
+  }
+}
+
+async function refresh() {
+  await loadHives();
+  const s = await loadStatus();
+  if (s) await loadCharts(s.metrics);
+}
+
+document.getElementById("sites").addEventListener("click", e => {
+  const b = e.target.closest("[data-site]");
+  if (!b) return;
+  site = b.dataset.site; hive = null; refresh();
+});
+document.getElementById("hives").addEventListener("click", e => {
+  const b = e.target.closest("[data-hive]");
+  if (!b) return;
+  hive = b.dataset.hive;
+  for (const id of Object.keys(charts)) { charts[id].destroy(); delete charts[id]; }
+  document.getElementById("charts").innerHTML = "";
+  refresh();
+});
+document.getElementById("ranges").addEventListener("click", e => {
+  const b = e.target.closest("[data-hours]");
+  if (!b) return;
+  hours = Number(b.dataset.hours);
+  [...e.currentTarget.children].forEach(c => c.setAttribute("aria-pressed", c === b));
+  loadStatus().then(s => s && loadCharts(s.metrics));
+});
+document.getElementById("save").addEventListener("click", async () => {
+  const v = Number(document.getElementById("interval").value);
+  const r = await fetch(`/api/hives/${hive}/settings`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ interval_min: v }),
+  });
+  if (!r.ok) { document.getElementById("state").textContent = "Could not save."; return; }
+  loadStatus();
+});
+
+// Chart.js time scale needs a date adapter.
+const adapter = document.createElement("script");
+adapter.src = "https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3/dist/chartjs-adapter-date-fns.bundle.min.js";
+adapter.onload = () => { refresh(); setInterval(refresh, 60000); };
+document.head.appendChild(adapter);
+</script>
+</body>
+</html>

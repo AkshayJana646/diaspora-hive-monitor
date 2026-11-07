@@ -1,0 +1,7 @@
+hive.db
+hive.db-journal
+backup-*.db
+.env
+__pycache__/
+*.pyc
+.venv/

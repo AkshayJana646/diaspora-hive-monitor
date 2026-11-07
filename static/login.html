@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diaspora Honey — log in</title>
+<style>
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: #fbfaf6;
+    color: #1f2420;
+    max-width: 340px;
+    margin: 14vh auto;
+    padding: 0 20px;
+    font-size: 17px;
+  }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  p.sub { color: #5f6b63; margin-top: 0; }
+  input, button {
+    display: block;
+    width: 100%;
+    margin: 10px 0;
+    padding: 13px;
+    font: inherit;
+    border-radius: 8px;
+    border: 1px solid #e2e5df;
+    box-sizing: border-box;
+    min-height: 46px;
+  }
+  button { background: #1f2420; color: #fbfaf6; border-color: #1f2420; cursor: pointer; }
+  #err { color: #b5541a; font-size: 15px; }
+</style>
+</head>
+<body>
+  <h1>Diaspora Honey</h1>
+  <p class="sub">hive monitor</p>
+  <p id="err" hidden>Wrong username or password.</p>
+  <form method="post" action="/login">
+    <input name="username" placeholder="Username" autocomplete="username" required autofocus>
+    <input name="password" type="password" placeholder="Password" autocomplete="current-password" required>
+    <button type="submit">Log in</button>
+  </form>
+  <script>
+    if (location.search.includes("error")) document.getElementById("err").hidden = false;
+  </script>
+</body>
+</html>

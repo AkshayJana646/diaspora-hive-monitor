@@ -289,17 +289,3 @@ route.
 
 ---
 
-## Hosting
-
-1. A small Ubuntu server, 1 CPU and 1 GB. **Pick one whose disk survives
-   restarts** — `hive.db` lives on it.
-2. An A record from `hive.yourdomain.com` to its IP.
-3. Clone, make a virtualenv, `pip install -r requirements.txt`.
-4. `manage.py add-hive` and `add-user`.
-5. A systemd unit running uvicorn on `127.0.0.1:8000` with `Restart=always`.
-6. Caddy reverse-proxying that port; it gets and renews the certificate itself.
-7. Firewall open on 22, 80 and 443 only. Port 8000 stays closed.
-
-**The platform-as-a-service trap.** Services that deploy from GitHub save steps
-1, 5 and 6, but many wipe the disk on every deploy, deleting `hive.db` and
-every reading in it. If you use one, switch to its Postgres first.
